@@ -1,0 +1,226 @@
+TEM QUE SER NO EVENTO 02 APÓS SALVAR
+*----------------------------------------------------------------------*
+***INCLUDE LZGFC004F01 .
+*----------------------------------------------------------------------*
+FORM zf_validate_entry.
+
+  DATA: lt_ztbfic032_log TYPE TABLE OF ztbfic032_log,
+        lt_log           TYPE TABLE OF ztbfic032_log.
+
+  DATA: lw_row           TYPE ztbfic032,
+        lw_log           TYPE ztbfic032_log,
+        lw_ztbfic032_log TYPE ztbfic032_log.
+
+  DATA: lx_seq(5) TYPE n.
+
+  CLEAR: lt_log[].
+
+  LOOP AT total.
+    lx_seq = 1.
+    CLEAR: lw_row.
+    IF <vim_total_struc> IS ASSIGNED.
+      MOVE-CORRESPONDING <vim_total_struc> TO lw_row.
+
+    ENDIF.
+
+    IF <action> NE 'D' AND <action> IS NOT INITIAL AND <action> NE 'X'.
+      IF lw_row-lifnr IS INITIAL AND lw_row-ktokk IS INITIAL.
+        MESSAGE 'Favor inserir Fornecedor ou Grupo de Fornecedor' TYPE 'S' DISPLAY LIKE 'E'.
+        vim_abort_saving = 'X'.
+        EXIT.
+
+      ELSE.
+        IF lw_row-zterm IS INITIAL.
+          MESSAGE 'Favor inserir Condição de Pagamento' TYPE 'S' DISPLAY LIKE 'E'.
+          vim_abort_saving = 'X'.
+          EXIT.
+
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+* Lógica para atualização de LOG de alteração
+    CLEAR: lt_ztbfic032_log[].
+
+    CASE <action>.
+      WHEN 'N'."Inclusão
+        lw_log-lifnr      = lw_row-lifnr.
+        lw_log-ktokk      = lw_row-ktokk.
+        lw_log-bukrs      = lw_row-bukrs.
+        lw_log-data       = sy-datum.
+        lw_log-hora       = sy-uzeit.
+        lw_log-operacao   = 'I'.
+        lw_log-usuario    = sy-uname.
+
+        IF lw_row-matnr IS NOT INITIAL.
+          lw_log-valor_para = lw_row-matnr.
+          lw_log-campo      = 'MATNR'.
+          lw_log-seq        = lx_seq.
+          lx_seq            = lx_seq + 1.
+          APPEND lw_log TO lt_log.
+
+        ENDIF.
+
+        IF lw_row-zterm IS NOT INITIAL.
+          lw_log-valor_para = lw_row-zterm.
+          lw_log-campo      = 'ZTERM'.
+          lw_log-seq        = lx_seq.
+          lx_seq            = lx_seq + 1.
+          APPEND lw_log TO lt_log.
+
+        ENDIF.
+
+        IF lw_row-matnr IS INITIAL AND lw_row-zterm IS INITIAL.
+          APPEND lw_log TO lt_log.
+
+        ENDIF.
+
+      WHEN 'U'."Alteração
+        lw_log-lifnr      = lw_row-lifnr.
+        lw_log-ktokk      = lw_row-ktokk.
+        lw_log-bukrs      = lw_row-bukrs.
+        lw_log-operacao   = 'A'.
+        lw_log-usuario    = sy-uname.
+
+        SELECT * FROM ztbfic032_log
+          INTO TABLE lt_ztbfic032_log
+          WHERE lifnr EQ lw_row-lifnr
+            AND ktokk EQ lw_row-ktokk
+            AND bukrs EQ lw_row-bukrs.
+
+        IF sy-subrc IS INITIAL.
+          SORT lt_ztbfic032_log BY data hora DESCENDING.
+
+          READ TABLE lt_ztbfic032_log INTO lw_ztbfic032_log
+          WITH KEY campo = 'MATNR'.
+          IF sy-subrc IS NOT INITIAL.
+            READ TABLE lt_ztbfic032_log
+            WITH KEY campo = 'ZTERM' TRANSPORTING NO FIELDS.
+            IF sy-subrc IS NOT INITIAL. "PRIMEIRA ALTERAÇÃO
+              IF lw_row-matnr IS NOT INITIAL.
+                lw_log-data       = sy-datum.
+                lw_log-hora       = sy-uzeit.
+                lw_log-seq        = lx_seq.
+                lw_log-campo      = 'MATNR'.
+                lw_log-valor_para = lw_row-matnr.
+                APPEND lw_log TO lt_log.
+                lx_seq = lx_seq + 1.
+
+              ENDIF.
+
+              IF lw_row-matnr IS NOT INITIAL."PRIMEIRA ALTERAÇÃO
+                lw_log-data       = sy-datum.
+                lw_log-hora       = sy-uzeit.
+                lw_log-seq        = lx_seq.
+                lw_log-campo      = 'MATNR'.
+                lw_log-valor_para = lw_row-matnr.
+                APPEND lw_log TO lt_log.
+                lx_seq = lx_seq + 1.
+
+              ENDIF.
+            ENDIF.
+
+          ELSE. "REGISTRO JÁ EXISTENTE
+            IF lw_row-matnr NE lw_ztbfic032_log-valor_para.
+              lw_log-data       = sy-datum.
+              lw_log-hora       = sy-uzeit.
+              lw_log-seq        = lx_seq.
+              lw_log-campo      = 'MATNR'.
+              lw_log-valor_de   = lw_ztbfic032_log-valor_para.
+              lw_log-valor_para = lw_row-matnr.
+              APPEND lw_log TO lt_log.
+              lx_seq = lx_seq + 1.
+
+            ENDIF.
+          ENDIF.
+
+          READ TABLE lt_ztbfic032_log INTO lw_ztbfic032_log
+          WITH KEY campo = 'ZTERM'.
+          IF sy-subrc IS NOT INITIAL.
+            READ TABLE lt_ztbfic032_log
+            WITH KEY campo = 'MATNR' TRANSPORTING NO FIELDS.
+            IF sy-subrc IS NOT INITIAL. "PRIMEIRA ALTERAÇÃO
+              IF lw_row-matnr IS NOT INITIAL.
+                lw_log-data       = sy-datum.
+                lw_log-hora       = sy-uzeit.
+                lw_log-seq        = lx_seq.
+                lw_log-campo      = 'ZTERM'.
+                lw_log-valor_para = lw_row-zterm.
+                APPEND lw_log TO lt_log.
+                lx_seq = lx_seq + 1.
+
+              ENDIF.
+
+              IF lw_row-zterm IS NOT INITIAL."PRIMEIRA ALTERAÇÃO
+                lw_log-data       = sy-datum.
+                lw_log-hora       = sy-uzeit.
+                lw_log-seq        = lx_seq.
+                lw_log-campo      = 'ZTERM'.
+                lw_log-valor_para = lw_row-zterm.
+                APPEND lw_log TO lt_log.
+                lx_seq = lx_seq + 1.
+
+              ENDIF.
+            ENDIF.
+
+          ELSE. "REGISTRO JÁ EXISTENTE
+            IF lw_row-zterm NE lw_ztbfic032_log-valor_para.
+              lw_log-data       = sy-datum.
+              lw_log-hora       = sy-uzeit.
+              lw_log-seq        = lx_seq.
+              lw_log-campo      = 'ZTERM'.
+              lw_log-valor_de   = lw_ztbfic032_log-valor_para.
+              lw_log-valor_para = lw_row-zterm.
+              APPEND lw_log TO lt_log.
+              lx_seq = lx_seq + 1.
+
+            ENDIF.
+          ENDIF.
+        ENDIF.
+
+      WHEN 'D'."Exclusão
+        IF lw_row-matnr IS NOT INITIAL.
+          lw_log-lifnr      = lw_row-lifnr.
+          lw_log-ktokk      = lw_row-ktokk.
+          lw_log-bukrs      = lw_row-bukrs.
+          lw_log-data       = sy-datum.
+          lw_log-hora       = sy-uzeit.
+          lw_log-operacao   = 'D'.
+          lw_log-seq        = lx_seq.
+          lw_log-campo      = 'MATNR'.
+          lw_log-valor_de   = lw_row-matnr.
+          lw_log-usuario    = sy-uname.
+
+          APPEND lw_log TO lt_log.
+          lx_seq = lx_seq + 1.
+
+        ENDIF.
+
+        IF lw_row-zterm IS NOT INITIAL.
+          lw_log-lifnr      = lw_row-lifnr.
+          lw_log-ktokk      = lw_row-ktokk.
+          lw_log-bukrs      = lw_row-bukrs.
+          lw_log-data       = sy-datum.
+          lw_log-hora       = sy-uzeit.
+          lw_log-operacao   = 'D'.
+          lw_log-seq        = lx_seq.
+          lw_log-campo      = 'ZTERM'.
+          lw_log-valor_de   = lw_row-zterm.
+          lw_log-usuario    = sy-uname.
+
+          APPEND lw_log TO lt_log.
+          lx_seq = lx_seq + 1.
+
+        ENDIF.
+
+      WHEN OTHERS.
+
+    ENDCASE.
+  ENDLOOP.
+
+  IF lt_log[] IS NOT INITIAL.
+    MODIFY ztbfic032_log FROM TABLE lt_log.
+
+  ENDIF.
+
+ENDFORM.                    "ZF_VALIDATE_ENTRY
